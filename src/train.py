@@ -26,7 +26,7 @@ class TrainModel(object):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # gpu or cpu
         self.alpha, self.beta1, self.beta2 = 0.0001, 0.9, 0.999  # Adam parameters
         self.lambda_g, self.lambda_l = 10, 3  # loss parameters
-        self.adattn_shapes = [256, 256]  # parameters for adaptive attention network
+        self.adattn_shape = 256  # parameters for adaptive attention network, squared image size
 
         # Tracking losses
         self.train_loss = []  # [global loss, local loss, total loss] for train
@@ -42,21 +42,18 @@ class TrainModel(object):
         self.TrainLoader = DataLoader(train_dataset, batch_size=self.batch_size)  # create loaders
         self.ValLoader = DataLoader(val_dataset, batch_size=self.batch_size)
 
-    def train_epoch(self, epoch):
+    def train_epoch(self):
         """
         Model training for current epoch with training dataset
-        :param epoch: int, number of current epoch
         :return:
         """
-        self.Model.AdaAttn.train()
+        # self.Model.AdaAttn.train()
         for (content_im, style_im) in self.TrainLoader:  # run 1 batch
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
-            print('*' * 50, "Train the batch", '*' * 50)
             with torch.set_grad_enabled(True):
-                print("Initial shape", content_im.shape, style_im.shape)
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
                 print('*' * 50, "Count loss", '*' * 50)
-                all_loss = self.Criterion(I_cs, features)  # get loss
+                all_loss = self.Criterion.total_loss(I_cs, features)  # get loss
                 self.train_loss.append(all_loss)  # accumulate losses
                 all_loss[-1].backward()  # backward loss for model fitting
 
@@ -64,18 +61,17 @@ class TrainModel(object):
                 self.Optimizer.zero_grad()
                 self.Model.AdaAttn.zero_grad()
 
-    def validation_epoch(self, epoch):
+    def validation_epoch(self):
         """
         Test model on a current epoch with validation data
-        :param epoch: int, number of current epoch
         :return:
         """
-        self.Model.AdaAttn.eval()
+        # self.Model.AdaAttn.eval()
         for (content_im, style_im) in self.ValLoader:
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
             with torch.set_grad_enabled(False):
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
-                all_loss = self.Criterion(I_cs, features)  # get loss
+                all_loss = self.Criterion.total_loss(I_cs, features)  # get loss
                 self.val_loss.append(all_loss)  # accumulate losses
 
     def train_full(self):
@@ -85,22 +81,24 @@ class TrainModel(object):
         """
         print('*' * 50, "Data load", '*' * 50)
         self.load_data()  # load data to DataLoaders
-        self.Model = OverallModel(*self.adattn_shapes).to(self.device)  # initialize model, optimizers, loss
-        self.Criterion = LossCalculate
-        self.Optimizer = torch.optim.Adam(self.Model.AdaAttn.parameters(), lr=self.alpha, betas=(self.beta1, self.beta2))
-        self.Scheduler = torch.optim.lr_scheduler.ConstantLR(self.Optimizer)
+        self.Model = OverallModel(self.adattn_shape).to(self.device)  # initialize model, optimizers, loss
+        self.Criterion = LossCalculate(self.lambda_l, self.lambda_g)
+        self.Optimizer = [torch.optim.Adam(self.Model.AdaAttn[i].parameters(), lr=self.alpha, betas=(self.beta1, self.beta2)) for i in range(3)]
+        self.Scheduler = torch.optim.lr_scheduler.ConstantLR(self.Optimizer[0])
 
         for epoch in range(self.num_epochs):  # run epoch
             # for every epoch: train -> validation
-            self.train_epoch(epoch)
-            self.validation_epoch(epoch)
+            self.train_epoch()
+            print(f"{epoch}: Train is done")
+            self.validation_epoch()
+            print(f"{epoch}: Validation is done")
             self.Scheduler.step(epoch)
 
             # save results
             if epoch % (self.num_epochs // self.checkpoints) == 0:
                 torch.save({
                     'model_state_dict': self.Model.state_dict(),
-                    'optimizer_state_dict': self.Optimizer.state_dict()
+                    'optimizer_state_dict': self.Optimizer[0].state_dict()
                 }, f'checkpoint{epoch // (self.num_epochs // self.checkpoints)}.pth')
 
 

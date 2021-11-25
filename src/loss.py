@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torchvision
@@ -9,9 +10,9 @@ class AdaAttNStar(nn.Module):
     Supervision signal that should be deterministic
     """
 
-    def __init__(self, v_dim, qk_dim):
+    def __init__(self):
         super(AdaAttNStar, self).__init__()
-        self.softmax = nn.Softmax()
+        self.softmax = nn.Softmax(dim=-1)
 
     @staticmethod
     def norm(x):
@@ -28,25 +29,24 @@ class AdaAttNStar(nn.Module):
 
     def forward(self, F_c, F_s, F_c_previous, F_s_previous):
         # attention map generation
-        Q = self.norm(F_c_previous)
-        K = self.norm(F_s_previous)
-        V = F_s
-        print(Q.shape)  # check transpose dim
-        A = self.softmax(torch.matmul(torch.transpose(Q, 1, 2), K))  # attention map
+        Q = self.norm(F_c_previous).flatten(-2, -1)  # query, shape (batch, channels 1:x, H*W)
+        K = self.norm(F_s_previous).flatten(-2, -1)  # key, shape (batch, channels 1:x, H*W)
+        V = F_s.flatten(-2, -1)  # value, shape (batch, channels, H*W)
+        A = self.softmax(torch.matmul(torch.transpose(Q, 1, 2), K))  # attention map, shape (batch, H*W, H*W)
 
         # attention-weighted mean and standard variance map
-        print(A.shape)  # check transpose dim
-        A_T = torch.transpose(A, 1, 2)
-        M = torch.matmul(V, A_T)  # mean
-        S = torch.sqrt(torch.matmul(V * V, A_T) - M * M)  # standard variance
+        A_T = torch.transpose(A, 1, 2)  # shape (batch, H*W, channels 1:x)
+        M = torch.matmul(V, A_T)  # mean, shape (batch, channels, H*W)
+        S = torch.sqrt(torch.matmul(V * V, A_T) - M * M)  # standard variance, shape (batch, channels, H*W)
 
         # adaptive normalization
-        F_cs = S * self.norm(F_c) + M
+        F_cs = S * self.norm(F_c).flatten(-2, -1) + M  # S - scale, M - shift, shape (batch, channels, H*W)
         return F_cs
 
 
 class LossCalculate(object):
-    def __init__(self, lambda_l, lambda_g, Model):
+    def __init__(self, lambda_l, lambda_g):
+        super(LossCalculate, self).__init__()
         """
         Calculate of loss function
         :param lambda_l: weight of local loss
@@ -65,7 +65,7 @@ class LossCalculate(object):
         }
         self.features = create_feature_extractor(self.encoder,
                                                  return_nodes=self.return_nodes)  # get features of layers 3, 4, 5
-        self.AdaAttN_star = AdaAttNStar(256, 256)  # supervision signal for local loss
+        self.AdaAttN_star = AdaAttNStar()  # supervision signal for local loss
 
     def local_loss(self, I_cs, features):
         """
@@ -76,11 +76,11 @@ class LossCalculate(object):
         """
         [F_s3, F_s4, F_s5, F_c3, F_c4, F_c5, F_s3_previous, F_s4_previous, F_s5_previous, F_c3_previous, F_c4_previous,
          F_c5_previous] = features
-        E_values = list(self.features(I_cs).values())
+        E_values = [elem.flatten(-2, -1) for elem in list(self.features(I_cs).values())]
         ada_values = [self.AdaAttN_star(F_c3, F_s3, F_c3_previous, F_s3_previous),
                       self.AdaAttN_star(F_c4, F_s4, F_c4_previous, F_s4_previous),
                       self.AdaAttN_star(F_c5, F_s5, F_c5_previous, F_s5_previous)]
-        loss = [torch.cdist(E_values[i], ada_values[i], p=2) for i in range(3)]
+        loss = [torch.linalg.matrix_norm(E_values[i] - ada_values[i], dim=[1, 2], ord=2) for i in range(3)]
         return sum(loss)
 
     def global_loss(self, I_cs, F_values):
@@ -91,8 +91,8 @@ class LossCalculate(object):
         :return:
         """
         E_values = list(self.features(I_cs).values())
-        loss = [torch.cdist(torch.mean(E_values[i]), torch.mean(F_values[i]), p=2) + \
-                torch.cdist(torch.std(E_values[i]), torch.std(F_values[i]), p=2) for i in range(3)]
+        loss = [torch.linalg.matrix_norm(torch.mean(E_values[i], dim=1) - torch.mean(F_values[i], dim=1), ord=2) +
+                torch.linalg.matrix_norm(torch.std(E_values[i], dim=1) - torch.std(F_values[i], dim=1), ord=2) for i in range(3)]
         return sum(loss)
 
     def total_loss(self, I_cs, features):
@@ -102,8 +102,25 @@ class LossCalculate(object):
         :param features: features and previous features for 3, 4, 5 layers for content and style images
         :return: global loss, local loss, total_loss
         """
-        [F_s3, F_s4, F_s5, _] = features
+        [F_s3, F_s4, F_s5, F_c3, F_c4, F_c5, F_s3_previous, F_s4_previous, F_s5_previous, F_c3_previous, F_c4_previous,
+         F_c5_previous] = features
         global_loss = self.global_loss(I_cs, [F_s3, F_s4, F_s5])
+        print("global", global_loss)
         local_loss = self.local_loss(I_cs, features)
+        print("local", local_loss)
         total_loss = self.lambda_g * global_loss + self.lambda_l * local_loss
         return global_loss, local_loss, total_loss
+
+
+if __name__ == '__main__':
+    model = LossCalculate(2, 2)
+    print(model.total_loss(torch.randn([8, 3, 256, 256]), [torch.randn([8, 256, 64, 64]), torch.randn([8, 512, 32, 32]),
+                                                           torch.randn([8, 512, 16, 16]), torch.randn([8, 256, 64, 64]),
+                                                           torch.randn([8, 512, 32, 32]), torch.randn([8, 512, 16, 16]),
+                                                           torch.randn([8, 3328, 64, 64]),
+                                                           torch.randn([8, 11264, 32, 32]),
+                                                           torch.randn([8, 15360, 16, 16]),
+                                                           torch.randn([8, 3328, 64, 64]),
+                                                           torch.randn([8, 11264, 32, 32]),
+                                                           torch.randn([8, 15360, 16, 16])]
+                           ))
