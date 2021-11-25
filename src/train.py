@@ -1,6 +1,5 @@
 import torch
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 # import source files
 from dataset import ContentStyleDataset
@@ -13,11 +12,6 @@ class TrainModel(object):
     Overall model training
     """
     def __init__(self):
-        self.Model = None  # architecture
-        self.Optimizer = None
-        self.Scheduler = None  # learning rate optimizer
-        self.Criterion = None  # loss function
-
         # hyper parameters
         self.num_epochs = 50000  # number of epochs to train
         self.checkpoints = 5  # times of checkpoints
@@ -27,6 +21,12 @@ class TrainModel(object):
         self.alpha, self.beta1, self.beta2 = 0.0001, 0.9, 0.999  # Adam parameters
         self.lambda_g, self.lambda_l = 10, 3  # loss parameters
         self.adattn_shape = 256  # parameters for adaptive attention network, squared image size
+
+        # Initialisation
+        self.Model = OverallModel(self.adattn_shape).to(self.device)  # neural network
+        self.Criterion = LossCalculate(self.lambda_l, self.lambda_g)  # loss function
+        self.Optimizer = torch.optim.Adam(self.Model.parameters(), lr=self.alpha, betas=(self.beta1, self.beta2))
+        self.Scheduler = torch.optim.lr_scheduler.ConstantLR(self.Optimizer)  # learning rate scheduler
 
         # Tracking losses
         self.train_loss = []  # [global loss, local loss, total loss] for train
@@ -47,7 +47,7 @@ class TrainModel(object):
         Model training for current epoch with training dataset
         :return:
         """
-        # self.Model.AdaAttn.train()
+        self.Model.train()
         for (content_im, style_im) in self.TrainLoader:  # run 1 batch
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
             with torch.set_grad_enabled(True):
@@ -59,14 +59,14 @@ class TrainModel(object):
 
                 self.Optimizer.step()  # update optimizer
                 self.Optimizer.zero_grad()
-                self.Model.AdaAttn.zero_grad()
+                self.Model.zero_grad()
 
     def validation_epoch(self):
         """
         Test model on a current epoch with validation data
         :return:
         """
-        # self.Model.AdaAttn.eval()
+        self.Model.eval()
         for (content_im, style_im) in self.ValLoader:
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
             with torch.set_grad_enabled(False):
@@ -81,10 +81,6 @@ class TrainModel(object):
         """
         print('*' * 50, "Data load", '*' * 50)
         self.load_data()  # load data to DataLoaders
-        self.Model = OverallModel(self.adattn_shape).to(self.device)  # initialize model, optimizers, loss
-        self.Criterion = LossCalculate(self.lambda_l, self.lambda_g)
-        self.Optimizer = [torch.optim.Adam(self.Model.AdaAttn[i].parameters(), lr=self.alpha, betas=(self.beta1, self.beta2)) for i in range(3)]
-        self.Scheduler = torch.optim.lr_scheduler.ConstantLR(self.Optimizer[0])
 
         for epoch in range(self.num_epochs):  # run epoch
             # for every epoch: train -> validation
@@ -98,7 +94,7 @@ class TrainModel(object):
             if epoch % (self.num_epochs // self.checkpoints) == 0:
                 torch.save({
                     'model_state_dict': self.Model.state_dict(),
-                    'optimizer_state_dict': self.Optimizer[0].state_dict()
+                    'optimizer_state_dict': self.Optimizer.state_dict()
                 }, f'checkpoint{epoch // (self.num_epochs // self.checkpoints)}.pth')
 
 

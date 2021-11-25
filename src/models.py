@@ -10,15 +10,15 @@ class AdaAttN(nn.Module):
     Adaptive Attention Normalization
     """
 
-    def __init__(self, v_dim, qk_dim):
+    def __init__(self, v_dim, qk_dim, eps=1e-12):
         super(AdaAttN, self).__init__()
+        self.eps = eps  # additive small value in order not to divide by zero
         self.f = nn.Conv2d(qk_dim, qk_dim, (1, 1))
         self.g = nn.Conv2d(qk_dim, qk_dim, (1, 1))
         self.h = nn.Conv2d(v_dim, v_dim, (1, 1))
         self.softmax = nn.Softmax(dim=-1)
 
-    @staticmethod
-    def norm(x):
+    def norm(self, x):
         """
         Channel-wise mean-variance normalization
         :param x: current vector of shape (batch_size, channels, w, h)
@@ -27,7 +27,7 @@ class AdaAttN(nn.Module):
         # we assume that feature extractor from VGG19 returns tensors of shape: (batch_size, channels, w, h)
         for channel in range(3):
             cur_x = x[:, channel, :, :]
-            x[:, channel, :, :] = (cur_x - torch.mean(cur_x, dim=[0, 1, 2])) / torch.std(cur_x, dim=[0, 1, 2])
+            x[:, channel, :, :] = (cur_x - torch.mean(cur_x, dim=[0, 1, 2])) / (torch.std(cur_x, dim=[0, 1, 2]) + self.eps)
         return x
 
     def forward(self, F_c, F_s, F_c_previous, F_s_previous):
@@ -51,7 +51,6 @@ class Decoder(nn.Module):
     """
     From vectors to content image transformed to particular style
     """
-
     def __init__(self):
         super(Decoder, self).__init__()
         # preprocessing: (batch, channels, H*W) -> (batch, channels, H, W)
@@ -142,7 +141,6 @@ class OverallModel(nn.Module):
     """
     Full model: encoder (pretrained VGG19) -> get ReLU-3_1, ReLU-4_1, ReLU-5_1 -> AdaAttn -> decoder
     """
-
     def __init__(self, v_dim):
         super(OverallModel, self).__init__()
         self.encoder = torchvision.models.vgg19(pretrained=True)  # pretrained VGG19
@@ -160,7 +158,7 @@ class OverallModel(nn.Module):
     def bilinear_interpolation(x, F):
         """
         Bilinear interpolation D which down-samples the input feature to the shape of F_3/4/5
-        :param x: tensor, current layer's feature
+        :param x: tensor, current layer's feature, shape: (batch_size, channels, H, W)
         :return:
         """
         spatial_interpolation = functional.interpolate(x, F.shape[2:], mode="bilinear", align_corners=True).permute(0,2, 1, 3)
