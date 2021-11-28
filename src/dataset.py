@@ -12,15 +12,17 @@ class ContentStyleDataset(IterableDataset, ABC):
     """
     PyTorch Dataset which loads content and style images
     """
-    def __init__(self, ratio_train=0.8, mode="train", content_path="../data/train2014.zip", style_path="../data/wikiart.zip"):
+    def __init__(self, ratio_train=0.8, mode="train", content_path="../data/train2014.zip",
+                 style_path="../data/wikiart.zip", length=1000):
         """
         Initialize dataset parameters
         :param ratio_train: ratio of train in a full dataset
         :param mode: train or val
         :param content_path: path to zip with content images (COCO dataset)
         :param style_path: path to zip with style images (WikiArt)
+        :param length: size of dataset
         """
-        self.mode, self.ratio = mode, ratio_train
+        self.mode, self.ratio, self.length  = mode, ratio_train, length
         self.content_path, self.style_path = content_path, style_path  # paths of zip files
         self.transform = Compose([RandomResizedCrop(size=(256, 256)), ToTensor()])  # convert to tensor
 
@@ -42,9 +44,9 @@ class ContentStyleDataset(IterableDataset, ABC):
     def get_stream(self):
         """
         Cycle list of images' names in order to create iterable dataset
-        :return: cycle of pairs
+        :return: pairs with defined length
         """
-        return cycle(zip(self.get_data(self.content_path), self.get_data(self.style_path)))
+        return list(zip(self.get_data(self.content_path), self.get_data(self.style_path)))[:self.length]  # cycle(...)
 
     def __iter__(self):
         return self.get_stream()

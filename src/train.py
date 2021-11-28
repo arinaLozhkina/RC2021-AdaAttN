@@ -1,5 +1,6 @@
+import numpy as np
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, SubsetRandomSampler
 
 # import source files
 from dataset import ContentStyleDataset
@@ -13,7 +14,9 @@ class TrainModel(object):
     """
     def __init__(self):
         # hyper parameters
-        self.num_epochs = 50000  # number of epochs to train
+        self.num_epochs = 5  # number of epochs to train
+        self.train_dataset_length = 8000  # number of images in train dataset
+        self.val_dataset_length = 2000  # number of images in validation dataset
         self.checkpoints = 5  # times of checkpoints
         self.batch_size = 8
         self.train_ratio = 0.8  # part of train data in a full dataset
@@ -29,17 +32,17 @@ class TrainModel(object):
         self.Scheduler = torch.optim.lr_scheduler.ConstantLR(self.Optimizer)  # learning rate scheduler
 
         # Tracking losses
-        self.train_loss = []  # [global loss, local loss, total loss] for train
-        self.val_loss = []  # [global loss, local loss, total loss] for validation
+        self.train_loss = []  # [total loss] for train
+        self.val_loss = []  # [total loss] for validation
 
     def load_data(self):
         """
         Load initial data to dataloader
         :return:
         """
-        train_dataset = ContentStyleDataset(self.train_ratio, mode="train")  # get train data from dataset
-        val_dataset = ContentStyleDataset(self.train_ratio, mode="val")  # get train data from dataset
-        self.TrainLoader = DataLoader(train_dataset, batch_size=self.batch_size)  # create loaders
+        train_dataset = ContentStyleDataset(self.train_ratio, mode="train", length=self.train_dataset_length)  # get train data from dataset
+        val_dataset = ContentStyleDataset(self.train_ratio, mode="val", length=self.val_dataset_length)  # get train data from dataset
+        self.TrainLoader = DataLoader(train_dataset, batch_size=self.batch_size)  # create loader
         self.ValLoader = DataLoader(val_dataset, batch_size=self.batch_size)
 
     def train_epoch(self):
@@ -52,14 +55,11 @@ class TrainModel(object):
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
             with torch.set_grad_enabled(True):
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
-                print('*' * 50, "Count loss", '*' * 50)
+                self.Optimizer.zero_grad()
                 all_loss = self.Criterion.total_loss(I_cs, features)  # get loss
                 self.train_loss.append(all_loss)  # accumulate losses
-                all_loss[-1].backward()  # backward loss for model fitting
-
+                all_loss.backward()  # backward loss for model fitting
                 self.Optimizer.step()  # update optimizer
-                self.Optimizer.zero_grad()
-                self.Model.zero_grad()
 
     def validation_epoch(self):
         """
@@ -67,7 +67,7 @@ class TrainModel(object):
         :return:
         """
         self.Model.eval()
-        for (content_im, style_im) in self.ValLoader:
+        for (content_im, style_im) in self.ValLoader:  # run 1 batch
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
             with torch.set_grad_enabled(False):
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
@@ -79,15 +79,13 @@ class TrainModel(object):
         Run training for all epochs and save weights
         :return:
         """
-        print('*' * 50, "Data load", '*' * 50)
         self.load_data()  # load data to DataLoaders
-
         for epoch in range(self.num_epochs):  # run epoch
             # for every epoch: train -> validation
             self.train_epoch()
-            print(f"{epoch}: Train is done")
             self.validation_epoch()
-            print(f"{epoch}: Validation is done")
+            print(f"Epoch {epoch} / {self.num_epochs}: Train loss {self.train_loss[-1]}, "
+                  f"Validation loss: {self.val_loss[-1]}")
             self.Scheduler.step(epoch)
 
             # save results

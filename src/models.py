@@ -25,10 +25,12 @@ class AdaAttN(nn.Module):
         :return: normalized vector of shape (batch_size, channels, w, h)
         """
         # we assume that feature extractor from VGG19 returns tensors of shape: (batch_size, channels, w, h)
-        for channel in range(3):
+        res = torch.zeros_like(x)
+        channels_size = x.shape[1]  # number of channels
+        for channel in range(channels_size):
             cur_x = x[:, channel, :, :]
-            x[:, channel, :, :] = (cur_x - torch.mean(cur_x, dim=[0, 1, 2])) / (torch.std(cur_x, dim=[0, 1, 2]) + self.eps)
-        return x
+            res[:, channel, :, :] = (cur_x - torch.mean(cur_x, dim=[0, 1, 2])) / (torch.std(cur_x, dim=[0, 1, 2]) + self.eps)
+        return res
 
     def forward(self, F_c, F_s, F_c_previous, F_s_previous):
         # attention map generation
@@ -43,7 +45,7 @@ class AdaAttN(nn.Module):
         S = torch.sqrt(torch.matmul(V * V, A_T) - M * M)  # standard variance, shape (batch, channels, H*W)
 
         # adaptive normalization
-        F_cs = S * self.norm(F_c).flatten(-2, -1) + M  # S - scale, M - shift, shape (batch, channels, H*W)
+        F_cs = torch.nan_to_num(S) * self.norm(F_c).flatten(-2, -1) + M  # S - scale, M - shift, shape (batch, channels, H*W)
         return F_cs
 
 
@@ -61,43 +63,43 @@ class Decoder(nn.Module):
         # Stage F5
         self.upsample_f5 = nn.Upsample(scale_factor=2)
         self.conv_f5 = nn.Conv2d(512, 512, (1, 1))
-        self.relu_f5 = nn.ReLU()
+        self.relu_f5 = nn.ReLU(inplace=False)
 
         # Stage F4
         self.conv_f4 = nn.Conv2d(512, 256, (1, 1))
-        self.relu_f4 = nn.ReLU()
+        self.relu_f4 = nn.ReLU(inplace=False)
         self.upsample_f4 = nn.Upsample(scale_factor=2)
 
         # Stage F3
         self.conv1_f3 = nn.Conv2d(256, 256, (1, 1))
-        self.relu1_f3 = nn.ReLU()
+        self.relu1_f3 = nn.ReLU(inplace=False)
         self.conv2_f3 = nn.Conv2d(256, 256, (1, 1))
-        self.relu2_f3 = nn.ReLU()
+        self.relu2_f3 = nn.ReLU(inplace=False)
         self.conv3_f3 = nn.Conv2d(256, 256, (1, 1))
-        self.relu3_f3 = nn.ReLU()
+        self.relu3_f3 = nn.ReLU(inplace=False)
         self.conv_f3 = nn.Conv2d(256, 128, (1, 1))
-        self.relu_f3 = nn.ReLU()
+        self.relu_f3 = nn.ReLU(inplace=False)
         self.upsample_f3 = nn.Upsample(scale_factor=2)
 
         # Stage F2
         self.conv1_f2 = nn.Conv2d(128, 128, (1, 1))
-        self.relu1_f2 = nn.ReLU()
+        self.relu1_f2 = nn.ReLU(inplace=False)
         self.conv2_f2 = nn.Conv2d(128, 64, (1, 1))
-        self.relu2_f2 = nn.ReLU()
+        self.relu2_f2 = nn.ReLU(inplace=False)
         self.upsample_f2 = nn.Upsample(scale_factor=2)
 
         # Stage F1
         self.conv_f1 = nn.Conv2d(64, 64, (1, 1))
-        self.relu_f1 = nn.ReLU()
+        self.relu_f1 = nn.ReLU(inplace=False)
         self.conv = nn.Conv2d(64, 3, (1, 1))
 
-    def forward(self, F_cs3, F_cs4, F_cs5):
+    def forward(self, F_c3, F_c4, F_c5):
         # preprocessing
-        F_cs3, F_cs4, F_cs5 = self.unflatten_f3(F_cs3), self.unflatten_f4(F_cs4), self.unflatten_f5(F_cs5)
+        F_cs3, F_cs4, F_cs5 = self.unflatten_f3(F_c3), self.unflatten_f4(F_c4), self.unflatten_f5(F_c5)
 
         # Stage F5
         x = self.upsample_f5(F_cs5)
-        x = x + F_cs4
+        x = x.clone() + F_cs4
         x = self.conv_f5(x)
         x = self.relu_f5(x)
         # print("(512, H / 8, W / 8)", x.shape)
@@ -109,7 +111,7 @@ class Decoder(nn.Module):
         # print("(256, H / 4, W / 4)", x.shape)
 
         # Stage F3
-        x = x + F_cs3  # torch.concat([x, F_cs3], dim=0)
+        x = x.clone() + F_cs3  # torch.concat([x, F_cs3], dim=0)
         x = self.conv1_f3(x)
         x = self.relu1_f3(x)
         x = self.conv2_f3(x)
