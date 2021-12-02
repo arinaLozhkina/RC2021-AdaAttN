@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
 
 # import source files
-from dataset import ContentStyleDataset
+from simple_dataset import ContentStyleDataset
 from loss import LossCalculate
 from models import OverallModel
 
@@ -40,10 +40,12 @@ class TrainModel(object):
         Load initial data to dataloader
         :return:
         """
-        train_dataset = ContentStyleDataset(self.train_ratio, mode="train", length=self.train_dataset_length)  # get train data from dataset
-        val_dataset = ContentStyleDataset(self.train_ratio, mode="val", length=self.val_dataset_length)  # get train data from dataset
-        self.TrainLoader = DataLoader(train_dataset, batch_size=self.batch_size)  # create loader
-        self.ValLoader = DataLoader(val_dataset, batch_size=self.batch_size)
+        dataset = ContentStyleDataset(length=self.train_dataset_length)
+        train_sampler = SubsetRandomSampler(np.arange(self.train_dataset_length))
+        val_sampler = SubsetRandomSampler(np.linspace(self.train_dataset_length, self.train_dataset_length + self.val_dataset_length))
+        # val_dataset = ContentStyleDataset(self.train_ratio, mode="val", length=self.val_dataset_length)  # get train data from dataset
+        self.TrainLoader = DataLoader(dataset, batch_size=self.batch_size, sampler=train_sampler)  # create train loader
+        self.ValLoader = DataLoader(dataset, batch_size=self.batch_size, sampler=val_sampler)  # create val loader
 
     def train_epoch(self):
         """
@@ -54,12 +56,16 @@ class TrainModel(object):
         for (content_im, style_im) in self.TrainLoader:  # run 1 batch
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
             with torch.set_grad_enabled(True):
+                print("start to train")
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
                 self.Optimizer.zero_grad()
+                print("trained")
                 all_loss = self.Criterion.total_loss(I_cs, features)  # get loss
                 self.train_loss.append(all_loss)  # accumulate losses
+                print("start to backward")
                 all_loss.backward()  # backward loss for model fitting
                 self.Optimizer.step()  # update optimizer
+                print("train", all_loss)
 
     def validation_epoch(self):
         """
@@ -73,6 +79,7 @@ class TrainModel(object):
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
                 all_loss = self.Criterion.total_loss(I_cs, features)  # get loss
                 self.val_loss.append(all_loss)  # accumulate losses
+                print("validation", all_loss)
 
     def train_full(self):
         """
@@ -80,9 +87,11 @@ class TrainModel(object):
         :return:
         """
         self.load_data()  # load data to DataLoaders
+        print("data loaded")
         for epoch in range(self.num_epochs):  # run epoch
             # for every epoch: train -> validation
             self.train_epoch()
+            print("train")
             self.validation_epoch()
             print(f"Epoch {epoch} / {self.num_epochs}: Train loss {self.train_loss[-1]}, "
                   f"Validation loss: {self.val_loss[-1]}")
