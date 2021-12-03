@@ -23,10 +23,10 @@ class TrainModel(object):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # gpu or cpu
         self.alpha, self.beta1, self.beta2 = 0.0001, 0.9, 0.999  # Adam parameters
         self.lambda_g, self.lambda_l = 10, 3  # loss parameters
-        self.adattn_shape = 256  # parameters for adaptive attention network, squared image size
+        self.adattn_shape = 32  # squared image size
 
         # Initialisation
-        self.Model = OverallModel(self.adattn_shape).to(self.device)  # neural network
+        self.Model = OverallModel(self.adattn_shape, self.device).to(self.device)  # neural network
         self.Criterion = LossCalculate(self.lambda_l, self.lambda_g)  # loss function
         self.Optimizer = torch.optim.Adam(self.Model.parameters(), lr=self.alpha, betas=(self.beta1, self.beta2))
         self.Scheduler = torch.optim.lr_scheduler.ConstantLR(self.Optimizer)  # learning rate scheduler
@@ -40,7 +40,7 @@ class TrainModel(object):
         Load initial data to dataloader
         :return:
         """
-        dataset = ContentStyleDataset(length=self.train_dataset_length)
+        dataset = ContentStyleDataset(length=self.train_dataset_length, shape=self.adattn_shape)
         train_sampler = SubsetRandomSampler(np.arange(self.train_dataset_length))
         val_sampler = SubsetRandomSampler(np.linspace(self.train_dataset_length, self.train_dataset_length + self.val_dataset_length))
         # val_dataset = ContentStyleDataset(self.train_ratio, mode="val", length=self.val_dataset_length)  # get train data from dataset
@@ -60,7 +60,8 @@ class TrainModel(object):
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
                 self.Optimizer.zero_grad()
                 print("trained")
-                all_loss = self.Criterion.total_loss(I_cs, features)  # get loss
+                cpu_features = [feature.detach().cpu() for feature in features]
+                all_loss = self.Criterion.total_loss(I_cs.detach().cpu(), cpu_features)  # get loss
                 self.train_loss.append(all_loss)  # accumulate losses
                 print("start to backward")
                 all_loss.backward()  # backward loss for model fitting
@@ -77,7 +78,8 @@ class TrainModel(object):
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
             with torch.set_grad_enabled(False):
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
-                all_loss = self.Criterion.total_loss(I_cs, features)  # get loss
+                cpu_features = [feature.detach().cpu() for feature in features]
+                all_loss = self.Criterion.total_loss(I_cs.detach().cpu(), cpu_features)  # get loss
                 self.val_loss.append(all_loss)  # accumulate losses
                 print("validation", all_loss)
 

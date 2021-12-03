@@ -53,45 +53,46 @@ class Decoder(nn.Module):
     """
     From vectors to content image transformed to particular style
     """
-    def __init__(self):
+    def __init__(self, shape):
         super(Decoder, self).__init__()
         # preprocessing: (batch, channels, H*W) -> (batch, channels, H, W)
-        self.unflatten_f3 = nn.Unflatten(-1, (64, 64))
-        self.unflatten_f4 = nn.Unflatten(-1, (32, 32))
-        self.unflatten_f5 = nn.Unflatten(-1, (16, 16))
+        self.unflatten_f3 = nn.Unflatten(-1, (shape // 4, shape // 4))
+        self.unflatten_f4 = nn.Unflatten(-1, (shape // 8, shape // 8))
+        self.unflatten_f5 = nn.Unflatten(-1, (shape // 16, shape // 16))
 
         # Stage F5
         self.upsample_f5 = nn.Upsample(scale_factor=2)
-        self.conv_f5 = nn.Conv2d(512, 512, (1, 1))
+        shape = 256  # vgg features shape
+        self.conv_f5 = nn.Conv2d(shape * 2, shape * 2, (1, 1))
         self.relu_f5 = nn.ReLU(inplace=False)
 
         # Stage F4
-        self.conv_f4 = nn.Conv2d(512, 256, (1, 1))
+        self.conv_f4 = nn.Conv2d(shape * 2, shape, (1, 1))
         self.relu_f4 = nn.ReLU(inplace=False)
         self.upsample_f4 = nn.Upsample(scale_factor=2)
 
         # Stage F3
-        self.conv1_f3 = nn.Conv2d(256, 256, (1, 1))
+        self.conv1_f3 = nn.Conv2d(shape, shape, (1, 1))
         self.relu1_f3 = nn.ReLU(inplace=False)
-        self.conv2_f3 = nn.Conv2d(256, 256, (1, 1))
+        self.conv2_f3 = nn.Conv2d(shape, shape, (1, 1))
         self.relu2_f3 = nn.ReLU(inplace=False)
-        self.conv3_f3 = nn.Conv2d(256, 256, (1, 1))
+        self.conv3_f3 = nn.Conv2d(shape, shape, (1, 1))
         self.relu3_f3 = nn.ReLU(inplace=False)
-        self.conv_f3 = nn.Conv2d(256, 128, (1, 1))
+        self.conv_f3 = nn.Conv2d(shape, shape // 2, (1, 1))
         self.relu_f3 = nn.ReLU(inplace=False)
         self.upsample_f3 = nn.Upsample(scale_factor=2)
 
         # Stage F2
-        self.conv1_f2 = nn.Conv2d(128, 128, (1, 1))
+        self.conv1_f2 = nn.Conv2d(shape // 2, shape // 2, (1, 1))
         self.relu1_f2 = nn.ReLU(inplace=False)
-        self.conv2_f2 = nn.Conv2d(128, 64, (1, 1))
+        self.conv2_f2 = nn.Conv2d(shape // 2, shape // 4, (1, 1))
         self.relu2_f2 = nn.ReLU(inplace=False)
         self.upsample_f2 = nn.Upsample(scale_factor=2)
 
         # Stage F1
-        self.conv_f1 = nn.Conv2d(64, 64, (1, 1))
+        self.conv_f1 = nn.Conv2d(shape // 4, shape // 4, (1, 1))
         self.relu_f1 = nn.ReLU(inplace=False)
-        self.conv = nn.Conv2d(64, 3, (1, 1))
+        self.conv = nn.Conv2d(shape // 4, 3, (1, 1))
 
     def forward(self, F_c3, F_c4, F_c5):
         # preprocessing
@@ -143,7 +144,7 @@ class OverallModel(nn.Module):
     """
     Full model: encoder (pretrained VGG19) -> get ReLU-3_1, ReLU-4_1, ReLU-5_1 -> AdaAttn -> decoder
     """
-    def __init__(self, v_dim):
+    def __init__(self, v_dim, device):
         super(OverallModel, self).__init__()
         self.encoder = torchvision.models.vgg19(pretrained=True)  # pretrained VGG19
         self.layers_index = [13, 22, 31]  # index of relu-3_1, relu-4_1 and relu-5_1 features in VGG19
@@ -153,8 +154,9 @@ class OverallModel(nn.Module):
         self.return_nodes_previous = {f'features.{i}': f'features.{i}' for i in range(31) if i not in self.layers_index}
         self.features_previous = create_feature_extractor(self.encoder,
                                                           return_nodes=self.return_nodes_previous)  # get features of previous layers
-        self.AdaAttn = [AdaAttN(v * v_dim, q_dim * v * v_dim) for (v, q_dim) in [(1, 13), (2, 22), (2, 30)]]  # initialize Adaptive attention network
-        self.decoder = Decoder()  # initialize decoder
+        self.device = device
+        self.AdaAttn = [AdaAttN(v * 256, q_dim * v * 256).to(device) for (v, q_dim) in [(1, 13), (2, 22), (2, 30)]]  # initialize Adaptive attention network
+        self.decoder = Decoder(v_dim)  # initialize decoder
 
     @staticmethod
     def bilinear_interpolation(x, F):
@@ -194,9 +196,12 @@ class OverallModel(nn.Module):
                                                                                        self.F_s5)
 
         # adaptive attention network
-        F_cs3 = self.AdaAttn[0](self.F_c3, self.F_s3, self.F_c3_previous, self.F_s3_previous)  # for ReLU - 3
-        F_cs4 = self.AdaAttn[1](self.F_c4, self.F_s4, self.F_c4_previous, self.F_s4_previous)  # for ReLU - 4
-        F_cs5 = self.AdaAttn[2](self.F_c5, self.F_s5, self.F_c5_previous, self.F_s5_previous)  # for ReLU - 5
+        F_cs3 = self.AdaAttn[0](self.F_c3.to(self.device), self.F_s3.to(self.device), self.F_c3_previous.to(self.device),
+                                self.F_s3_previous.to(self.device))  # for ReLU - 3
+        F_cs4 = self.AdaAttn[1](self.F_c4.to(self.device), self.F_s4.to(self.device), self.F_c4_previous.to(self.device),
+                                self.F_s4_previous.to(self.device))  # for ReLU - 4
+        F_cs5 = self.AdaAttn[2](self.F_c5.to(self.device), self.F_s5.to(self.device), self.F_c5_previous.to(self.device),
+                                self.F_s5_previous.to(self.device))  # for ReLU - 5
 
         # decoder
         I_cs = self.decoder(F_cs3, F_cs4, F_cs5)
