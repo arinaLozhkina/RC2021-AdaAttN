@@ -1,11 +1,6 @@
-import io
 import os
-import zipfile
-from abc import ABC
-from itertools import cycle
-
 from PIL import ImageFile, Image
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from torchvision.transforms import Compose, RandomResizedCrop, ToTensor
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 

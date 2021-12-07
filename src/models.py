@@ -211,15 +211,16 @@ class OverallModel(nn.Module):
 
 
 # if __name__ == '__main__':
-    # model = OverallModel(256)
-    # content_im = torch.randn((8, 3, 256, 256))
-    # style_im = torch.randn((8, 3, 256, 256))
-    # print(model(content_im, style_im))
-    # model = AdaAttN(256, 256 * 13)
-    # vect = [torch.randn([8, 256, 64, 64]),  torch.randn([8, 256, 64, 64]), torch.randn([8, 3328, 64, 64]), torch.randn([8, 3328, 64, 64])]
-    # print(model(*vect))
-    # model = Decoder()
-    # f3 = torch.randn((8, 256, 4096))
-    # f4 = torch.randn((8, 512, 1024))
-    # f5 = torch.randn((8, 512, 256))
-    # print(model(f3, f4, f5).shape)
+#     # models test
+#     model = OverallModel(256)
+#     content_im = torch.randn((8, 3, 256, 256))
+#     style_im = torch.randn((8, 3, 256, 256))
+#     print(model(content_im, style_im))
+#     model = AdaAttN(256, 256 * 13)
+#     vect = [torch.randn([8, 256, 64, 64]),  torch.randn([8, 256, 64, 64]), torch.randn([8, 3328, 64, 64]), torch.randn([8, 3328, 64, 64])]
+#     print(model(*vect))
+#     model = Decoder()
+#     f3 = torch.randn((8, 256, 4096))
+#     f4 = torch.randn((8, 512, 1024))
+#     f5 = torch.randn((8, 512, 256))
+#     print(model(f3, f4, f5).shape)

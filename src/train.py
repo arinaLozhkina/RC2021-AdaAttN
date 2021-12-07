@@ -1,4 +1,7 @@
+from matplotlib import pyplot as plt
 import numpy as np
+import os
+import pickle
 import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
 
@@ -12,6 +15,7 @@ class TrainModel(object):
     """
     Overall model training
     """
+
     def __init__(self):
         # hyper parameters
         self.num_epochs = 5  # number of epochs to train
@@ -24,12 +28,13 @@ class TrainModel(object):
         self.alpha, self.beta1, self.beta2 = 0.0001, 0.9, 0.999  # Adam parameters
         self.lambda_g, self.lambda_l = 10, 3  # loss parameters
         self.adattn_shape = 32  # squared image size
+        self.pretrained = True  # if we want to use pretrained weights
+        self.version = 4  # version of checkpoint file with weights
 
         # Initialisation
         self.Model = OverallModel(self.adattn_shape, self.device).to(self.device)  # neural network
         self.Criterion = LossCalculate(self.lambda_l, self.lambda_g)  # loss function
         self.Optimizer = torch.optim.Adam(self.Model.parameters(), lr=self.alpha, betas=(self.beta1, self.beta2))
-        self.Scheduler = torch.optim.lr_scheduler.ConstantLR(self.Optimizer)  # learning rate scheduler
 
         # Tracking losses
         self.train_loss = []  # [total loss] for train
@@ -40,10 +45,11 @@ class TrainModel(object):
         Load initial data to dataloader
         :return:
         """
-        dataset = ContentStyleDataset(length=self.train_dataset_length, shape=self.adattn_shape)
+        dataset = ContentStyleDataset(length=self.train_dataset_length + self.val_dataset_length,
+                                      shape=self.adattn_shape)
         train_sampler = SubsetRandomSampler(np.arange(self.train_dataset_length))
-        val_sampler = SubsetRandomSampler(np.linspace(self.train_dataset_length, self.train_dataset_length + self.val_dataset_length))
-        # val_dataset = ContentStyleDataset(self.train_ratio, mode="val", length=self.val_dataset_length)  # get train data from dataset
+        val_sampler = SubsetRandomSampler(np.linspace(self.train_dataset_length, self.train_dataset_length +
+                                                      self.val_dataset_length - 1, self.val_dataset_length).astype(int))
         self.TrainLoader = DataLoader(dataset, batch_size=self.batch_size, sampler=train_sampler)  # create train loader
         self.ValLoader = DataLoader(dataset, batch_size=self.batch_size, sampler=val_sampler)  # create val loader
 
@@ -56,32 +62,53 @@ class TrainModel(object):
         for (content_im, style_im) in self.TrainLoader:  # run 1 batch
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
             with torch.set_grad_enabled(True):
-                print("start to train")
-                I_cs, features = self.Model(content_im, style_im)  # get predictions
                 self.Optimizer.zero_grad()
-                print("trained")
+                I_cs, features = self.Model(content_im, style_im)  # get predictions
                 cpu_features = [feature.detach().cpu() for feature in features]
                 all_loss = self.Criterion.total_loss(I_cs.detach().cpu(), cpu_features)  # get loss
                 self.train_loss.append(all_loss)  # accumulate losses
-                print("start to backward")
                 all_loss.backward()  # backward loss for model fitting
                 self.Optimizer.step()  # update optimizer
-                print("train", all_loss)
 
-    def validation_epoch(self):
+    def validation_epoch(self, epoch=0):
         """
         Test model on a current epoch with validation data
+        :params epoch: (Optional) current epoch
         :return:
         """
         self.Model.eval()
-        for (content_im, style_im) in self.ValLoader:  # run 1 batch
+        for idx, (content_im, style_im) in enumerate(self.ValLoader):  # run 1 batch
             content_im, style_im = content_im.to(self.device), style_im.to(self.device)  # convert to GPU
             with torch.set_grad_enabled(False):
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
                 cpu_features = [feature.detach().cpu() for feature in features]
                 all_loss = self.Criterion.total_loss(I_cs.detach().cpu(), cpu_features)  # get loss
                 self.val_loss.append(all_loss)  # accumulate losses
-                print("validation", all_loss)
+                if idx == 0:  # on the beginning of the epoch plot results
+                    self.plot_result_images(content_im, style_im, I_cs, epoch)
+
+
+    @staticmethod
+    def plot_result_images(content, style, im_cs, epoch=0, directory="./results"):
+        """
+        Plot content and style initial images and stylized result images and save it to folder results
+        :params content: content image
+        :params style: content image
+        :params im_cs: content image
+        :params epoch: (Optional) current epoch
+        :params directory: (Optional) path to folder where images are saved
+        :return:
+        """
+        fig, ax = plt.subplots(ncols=3)
+        ax[0].imshow(content.detach().cpu().numpy()[0, :3, :, :].transpose(1, 2, 0))
+        ax[0].axis('off')
+        ax[1].imshow(style.detach().cpu().numpy()[0, :3, :, :].transpose(1, 2, 0))
+        ax[1].axis('off')
+        ax[2].imshow(im_cs.detach().cpu().numpy()[0, :3, :, :].transpose(1, 2, 0))
+        ax[2].axis('off')
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        plt.savefig(os.path.join(directory, f"results_{epoch}.png"))
 
     def train_full(self):
         """
@@ -89,22 +116,33 @@ class TrainModel(object):
         :return:
         """
         self.load_data()  # load data to DataLoaders
-        print("data loaded")
+        if self.pretrained and os.path.isfile(f"./checkpoint{self.version}.pth"):   # load weights from pretrained model
+            checkpoint = torch.load(f"./checkpoint{self.version}.pth")
+            self.Model.load_state_dict(checkpoint['model_state_dict'])
+            self.Optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        print("*" * 60 + "Start training" + "*" * 60)
         for epoch in range(self.num_epochs):  # run epoch
             # for every epoch: train -> validation
-            self.train_epoch()
-            print("train")
-            self.validation_epoch()
+            # self.train_epoch()
+            self.validation_epoch(epoch)
             print(f"Epoch {epoch} / {self.num_epochs}: Train loss {self.train_loss[-1]}, "
                   f"Validation loss: {self.val_loss[-1]}")
-            self.Scheduler.step(epoch)
+            # self.Scheduler.step(epoch)
 
             # save results
+            print("*" * 60 + "Saving results" + "*" * 60)
             if epoch % (self.num_epochs // self.checkpoints) == 0:
                 torch.save({
                     'model_state_dict': self.Model.state_dict(),
                     'optimizer_state_dict': self.Optimizer.state_dict()
                 }, f'checkpoint{epoch // (self.num_epochs // self.checkpoints)}.pth')
+
+        # save losses
+        with open('train_loss', 'wb') as fp:
+            pickle.dump(self.train_loss, fp)
+        with open('val_loss', 'wb') as fp:
+            pickle.dump(self.val_loss, fp)
 
 
 if __name__ == '__main__':

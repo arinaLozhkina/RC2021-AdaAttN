@@ -92,26 +92,19 @@ class LossCalculate(object):
         return total_loss  # global_loss, local_loss
 
 
-if __name__ == '__main__':
-    # Loss test
-    model = LossCalculate(2, 2)
-    I_cs = torch.randn([8, 3, 256, 256])
-    features = \
-        [torch.randn([8, 256, 64, 64]), torch.randn([8, 512, 32, 32]),
-         torch.randn([8, 512, 16, 16]), torch.randn([8, 256, 64, 64]),
-         torch.randn([8, 512, 32, 32]), torch.randn([8, 512, 16, 16]),
-         torch.randn([8, 3328, 64, 64]),
-         torch.randn([8, 11264, 32, 32]),
-         torch.randn([8, 15360, 16, 16]),
-         torch.randn([8, 3328, 64, 64]),
-         torch.randn([8, 11264, 32, 32]),
-         torch.randn([8, 15360, 16, 16])]
-    loss = model.total_loss(I_cs, features)
-
-    # Plot results
-    # from matplotlib import pyplot as plt
-    # fig, ax = plt.subplots(ncols=3)
-    # ax[0].imshow(features[0][0, :3, :, :].permute(1, 2, 0))
-    # ax[1].imshow(features[1][0, :3, :, :].permute(1, 2, 0))
-    # ax[2].imshow(features[2][0, :3, :, :].permute(1, 2, 0))
+# if __name__ == '__main__':
+#     # Loss test
+#     model = LossCalculate(2, 2)
+#     I_cs = torch.randn([8, 3, 256, 256])
+#     features = \
+#         [torch.randn([8, 256, 64, 64]), torch.randn([8, 512, 32, 32]),
+#          torch.randn([8, 512, 16, 16]), torch.randn([8, 256, 64, 64]),
+#          torch.randn([8, 512, 32, 32]), torch.randn([8, 512, 16, 16]),
+#          torch.randn([8, 3328, 64, 64]),
+#          torch.randn([8, 11264, 32, 32]),
+#          torch.randn([8, 15360, 16, 16]),
+#          torch.randn([8, 3328, 64, 64]),
+#          torch.randn([8, 11264, 32, 32]),
+#          torch.randn([8, 15360, 16, 16])]
+#     loss = model.total_loss(I_cs, features)
 
