@@ -59,40 +59,50 @@ class Decoder(nn.Module):
         self.unflatten_f3 = nn.Unflatten(-1, (shape // 4, shape // 4))
         self.unflatten_f4 = nn.Unflatten(-1, (shape // 8, shape // 8))
         self.unflatten_f5 = nn.Unflatten(-1, (shape // 16, shape // 16))
+        self.kernel_size = (3, 3)
 
         # Stage F5
         self.upsample_f5 = nn.Upsample(scale_factor=2)
         shape = 256  # vgg features shape
-        self.conv_f5 = nn.Conv2d(shape * 2, shape * 2, (1, 1))
+        self.conv_f5 = nn.Conv2d(shape * 2, shape * 2, self.kernel_size)
         self.relu_f5 = nn.ReLU(inplace=False)
+        self.padding_f5 = nn.ReflectionPad2d((1, 1, 1, 1))
 
         # Stage F4
-        self.conv_f4 = nn.Conv2d(shape * 2, shape, (1, 1))
+        self.conv_f4 = nn.Conv2d(shape * 2, shape, self.kernel_size)
         self.relu_f4 = nn.ReLU(inplace=False)
         self.upsample_f4 = nn.Upsample(scale_factor=2)
+        self.padding_f4 = nn.ReflectionPad2d((1, 1, 1, 1))
 
         # Stage F3
-        self.conv1_f3 = nn.Conv2d(shape, shape, (1, 1))
+        self.conv1_f3 = nn.Conv2d(shape * 2, shape, self.kernel_size)
         self.relu1_f3 = nn.ReLU(inplace=False)
-        self.conv2_f3 = nn.Conv2d(shape, shape, (1, 1))
+        self.padding0_f3 = nn.ReflectionPad2d((1, 1, 1, 1))
+        self.conv2_f3 = nn.Conv2d(shape, shape, self.kernel_size)
         self.relu2_f3 = nn.ReLU(inplace=False)
-        self.conv3_f3 = nn.Conv2d(shape, shape, (1, 1))
+        self.padding1_f3 = nn.ReflectionPad2d((1, 1, 1, 1))
+        self.conv3_f3 = nn.Conv2d(shape, shape, self.kernel_size)
         self.relu3_f3 = nn.ReLU(inplace=False)
-        self.conv_f3 = nn.Conv2d(shape, shape // 2, (1, 1))
+        self.padding2_f3 = nn.ReflectionPad2d((1, 1, 1, 1))
+        self.conv_f3 = nn.Conv2d(shape, shape // 2, self.kernel_size)
         self.relu_f3 = nn.ReLU(inplace=False)
         self.upsample_f3 = nn.Upsample(scale_factor=2)
+        self.padding3_f3 = nn.ReflectionPad2d((1, 1, 1, 1))
 
         # Stage F2
-        self.conv1_f2 = nn.Conv2d(shape // 2, shape // 2, (1, 1))
+        self.conv1_f2 = nn.Conv2d(shape // 2, shape // 2, self.kernel_size)
         self.relu1_f2 = nn.ReLU(inplace=False)
-        self.conv2_f2 = nn.Conv2d(shape // 2, shape // 4, (1, 1))
+        self.padding1_f2 = nn.ReflectionPad2d((1, 1, 1, 1))
+        self.conv2_f2 = nn.Conv2d(shape // 2, shape // 4, self.kernel_size)
         self.relu2_f2 = nn.ReLU(inplace=False)
         self.upsample_f2 = nn.Upsample(scale_factor=2)
+        self.padding2_f2 = nn.ReflectionPad2d((1, 1, 1, 1))
 
         # Stage F1
-        self.conv_f1 = nn.Conv2d(shape // 4, shape // 4, (1, 1))
+        self.conv_f1 = nn.Conv2d(shape // 4, shape // 4, self.kernel_size)
         self.relu_f1 = nn.ReLU(inplace=False)
-        self.conv = nn.Conv2d(shape // 4, 3, (1, 1))
+        self.padding_f1 = nn.ReflectionPad2d((1, 1, 1, 1))
+        self.conv = nn.Conv2d(shape // 4, 3, self.kernel_size)
 
     def forward(self, F_c3, F_c4, F_c5):
         # preprocessing
@@ -103,38 +113,47 @@ class Decoder(nn.Module):
         x = x.clone() + F_cs4
         x = self.conv_f5(x)
         x = self.relu_f5(x)
+        x = self.padding_f5(x)
         # print("(512, H / 8, W / 8)", x.shape)
 
         # Stage F4
         x = self.conv_f4(x)
         x = self.relu_f4(x)
+        x = self.padding_f4(x)
         x = self.upsample_f4(x)
         # print("(256, H / 4, W / 4)", x.shape)
 
         # Stage F3
-        x = x.clone() + F_cs3  # torch.concat([x, F_cs3], dim=0)
+        x = torch.concat([x, F_cs3], dim=1)
         x = self.conv1_f3(x)
         x = self.relu1_f3(x)
+        x = self.padding0_f3(x)
         x = self.conv2_f3(x)
         x = self.relu2_f3(x)
+        x = self.padding1_f3(x)
         x = self.conv3_f3(x)
         x = self.relu3_f3(x)
+        x = self.padding2_f3(x)
         x = self.conv_f3(x)
         x = self.relu_f3(x)
+        x = self.padding3_f3(x)
         x = self.upsample_f3(x)
         # print("(128, H / 2, W / 2)", x.shape)
 
         # Stage F2
         x = self.conv1_f2(x)
         x = self.relu1_f2(x)
+        x = self.padding1_f2(x)
         x = self.conv2_f2(x)
         x = self.relu2_f2(x)
+        x = self.padding2_f2(x)
         x = self.upsample_f2(x)
         # print("(64, H, W)", x.shape)
 
         # Stage F1
         x = self.conv_f1(x)
         x = self.relu_f1(x)
+        x = self.padding_f1(x)
         x = self.conv(x)
         # print("(3, H, W)", x.shape)
         return x
@@ -210,17 +229,17 @@ class OverallModel(nn.Module):
                       self.F_c3_previous, self.F_c4_previous, self.F_c5_previous]
 
 
-# if __name__ == '__main__':
-#     # models test
-#     model = OverallModel(256)
-#     content_im = torch.randn((8, 3, 256, 256))
-#     style_im = torch.randn((8, 3, 256, 256))
-#     print(model(content_im, style_im))
-#     model = AdaAttN(256, 256 * 13)
-#     vect = [torch.randn([8, 256, 64, 64]),  torch.randn([8, 256, 64, 64]), torch.randn([8, 3328, 64, 64]), torch.randn([8, 3328, 64, 64])]
-#     print(model(*vect))
-#     model = Decoder()
-#     f3 = torch.randn((8, 256, 4096))
-#     f4 = torch.randn((8, 512, 1024))
-#     f5 = torch.randn((8, 512, 256))
-#     print(model(f3, f4, f5).shape)
+if __name__ == '__main__':
+    # models test
+    # model = OverallModel(128, torch.device("cpu"))
+    # content_im = torch.randn((8, 3, 256, 256))
+    # style_im = torch.randn((8, 3, 256, 256))
+    # print(model(content_im, style_im))
+    # model = AdaAttN(256, 256 * 13)
+    # vect = [torch.randn([8, 256, 64, 64]),  torch.randn([8, 256, 64, 64]), torch.randn([8, 3328, 64, 64]), torch.randn([8, 3328, 64, 64])]
+    # print(model(*vect))
+    model = Decoder(256)
+    f3 = torch.randn((8, 256, 4096))
+    f4 = torch.randn((8, 512, 1024))
+    f5 = torch.randn((8, 512, 256))
+    print(model(f3, f4, f5).shape)

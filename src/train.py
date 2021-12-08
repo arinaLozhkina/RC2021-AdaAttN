@@ -22,12 +22,12 @@ class TrainModel(object):
         self.train_dataset_length = 8000  # number of images in train dataset
         self.val_dataset_length = 2000  # number of images in validation dataset
         self.checkpoints = 5  # times of checkpoints
-        self.batch_size = 8
+        self.batch_size = 4
         self.train_ratio = 0.8  # part of train data in a full dataset
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # gpu or cpu
         self.alpha, self.beta1, self.beta2 = 0.0001, 0.9, 0.999  # Adam parameters
         self.lambda_g, self.lambda_l = 10, 3  # loss parameters
-        self.adattn_shape = 32  # squared image size
+        self.adattn_shape = 128  # squared image size
         self.pretrained = True  # if we want to use pretrained weights
         self.version = 4  # version of checkpoint file with weights
 
@@ -117,7 +117,7 @@ class TrainModel(object):
         """
         self.load_data()  # load data to DataLoaders
         if self.pretrained and os.path.isfile(f"./checkpoint{self.version}.pth"):   # load weights from pretrained model
-            checkpoint = torch.load(f"./checkpoint{self.version}.pth")
+            checkpoint = torch.load(f"./checkpoint{self.version}.pth", map_location=self.device)
             self.Model.load_state_dict(checkpoint['model_state_dict'])
             self.Optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
