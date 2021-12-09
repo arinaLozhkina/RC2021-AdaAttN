@@ -101,8 +101,9 @@ class Decoder(nn.Module):
         # Stage F1
         self.conv_f1 = nn.Conv2d(shape // 4, shape // 4, self.kernel_size)
         self.relu_f1 = nn.ReLU(inplace=False)
-        self.padding_f1 = nn.ReflectionPad2d((1, 1, 1, 1))
+        self.padding1_f1 = nn.ReflectionPad2d((1, 1, 1, 1))
         self.conv = nn.Conv2d(shape // 4, 3, self.kernel_size)
+        self.padding2_f1 = nn.ReflectionPad2d((1, 1, 1, 1))
 
     def forward(self, F_c3, F_c4, F_c5):
         # preprocessing
@@ -153,8 +154,9 @@ class Decoder(nn.Module):
         # Stage F1
         x = self.conv_f1(x)
         x = self.relu_f1(x)
-        x = self.padding_f1(x)
+        x = self.padding1_f1(x)
         x = self.conv(x)
+        x = self.padding2_f1(x)
         # print("(3, H, W)", x.shape)
         return x
 

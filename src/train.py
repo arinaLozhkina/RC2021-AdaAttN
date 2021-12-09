@@ -27,8 +27,8 @@ class TrainModel(object):
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # gpu or cpu
         self.alpha, self.beta1, self.beta2 = 0.0001, 0.9, 0.999  # Adam parameters
         self.lambda_g, self.lambda_l = 10, 3  # loss parameters
-        self.adattn_shape = 128  # squared image size
-        self.pretrained = True  # if we want to use pretrained weights
+        self.adattn_shape = 256  # squared image size
+        self.pretrained = False  # if we want to use pretrained weights
         self.version = 4  # version of checkpoint file with weights
 
         # Initialisation
@@ -66,6 +66,7 @@ class TrainModel(object):
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
                 cpu_features = [feature.detach().cpu() for feature in features]
                 all_loss = self.Criterion.total_loss(I_cs.detach().cpu(), cpu_features)  # get loss
+                print("Train loss:", all_loss)
                 self.train_loss.append(all_loss)  # accumulate losses
                 all_loss.backward()  # backward loss for model fitting
                 self.Optimizer.step()  # update optimizer
@@ -83,6 +84,7 @@ class TrainModel(object):
                 I_cs, features = self.Model(content_im, style_im)  # get predictions
                 cpu_features = [feature.detach().cpu() for feature in features]
                 all_loss = self.Criterion.total_loss(I_cs.detach().cpu(), cpu_features)  # get loss
+                print("Va;idation loss:", all_loss)
                 self.val_loss.append(all_loss)  # accumulate losses
                 if idx == 0:  # on the beginning of the epoch plot results
                     self.plot_result_images(content_im, style_im, I_cs, epoch)
@@ -124,11 +126,10 @@ class TrainModel(object):
         print("*" * 60 + "Start training" + "*" * 60)
         for epoch in range(self.num_epochs):  # run epoch
             # for every epoch: train -> validation
-            # self.train_epoch()
+            self.train_epoch()
             self.validation_epoch(epoch)
             print(f"Epoch {epoch} / {self.num_epochs}: Train loss {self.train_loss[-1]}, "
                   f"Validation loss: {self.val_loss[-1]}")
-            # self.Scheduler.step(epoch)
 
             # save results
             print("*" * 60 + "Saving results" + "*" * 60)
