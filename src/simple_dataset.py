@@ -30,6 +30,3 @@ class ContentStyleDataset(Dataset):
         content = self.transform(Image.open(os.path.join(self.content_path, self.content_images[item])).convert('RGB'))
         style = self.transform(Image.open(os.path.join(self.style_path, self.style_images[item])).convert('RGB'))
         return content, style
-
-
-
