@@ -5,7 +5,7 @@ from torchvision.models.feature_extraction import create_feature_extractor
 
 
 class LossCalculate(object):
-    def __init__(self, lambda_l, lambda_g):
+    def __init__(self, lambda_l, lambda_g, device):
         super(LossCalculate, self).__init__()
         """
         Calculate of loss function
@@ -16,7 +16,8 @@ class LossCalculate(object):
         self.lambda_g = lambda_g  # weight of global loss
 
         # features of VGG19 layers
-        self.encoder = torchvision.models.vgg19(pretrained=True)  # pretrained VGG19
+        self.softmax = torch.nn.Softmax(dim=-1)
+        self.encoder = torchvision.models.vgg19(pretrained=True).to(device).eval()  # pretrained VGG19
         self.return_nodes = {
             'features.13': 'relu_3',  # relu-3_1
             'features.22': 'relu_4',  # relu-4_1
@@ -43,10 +44,11 @@ class LossCalculate(object):
         Q = self.norm(F_c_previous).flatten(-2, -1)  # query, shape (batch, channels 1:x, H*W)
         K = self.norm(F_s_previous).flatten(-2, -1)  # key, shape (batch, channels 1:x, H*W)
         V = F_s.flatten(-2, -1)  # value, shape (batch, channels, H*W)
-        A = torch.matmul(torch.transpose(Q, 1, 2), K)  # attention map, shape (batch, H*W, H*W)  # self.softmax(
+        A = self.softmax(torch.matmul(torch.transpose(Q, 1, 2), K))  # attention map, shape (batch, H*W, H*W)  
         A_T = torch.transpose(A, 1, 2)  # shape (batch, H*W, channels 1:x)
         M = torch.matmul(V, A_T)  # mean, shape (batch, channels, H*W)
-        S = torch.sqrt(torch.matmul(V * V, A_T) - M * M)  # standard variance, shape (batch, channels, H*W)
+        var = torch.matmul(V * V, A_T) - M * M
+        S = torch.sqrt(var.clamp(min=0) + 1e-8)  # standard variance, shape (batch, channels, H*W)
         F_cs = torch.nan_to_num(S) * self.norm(F_c).flatten(-2, -1) + M  # S - scale, M - shift
         return F_cs
 
@@ -89,22 +91,5 @@ class LossCalculate(object):
         local_loss = self.local_loss(features_values)
         global_loss = self.global_loss([F_s3, F_s4, F_s5])
         total_loss = self.lambda_l * local_loss + self.lambda_g * global_loss
-        return total_loss  # global_loss, local_loss
-
-
-# if __name__ == '__main__':
-#     # Loss test
-#     model = LossCalculate(2, 2)
-#     I_cs = torch.randn([8, 3, 256, 256])
-#     features = \
-#         [torch.randn([8, 256, 64, 64]), torch.randn([8, 512, 32, 32]),
-#          torch.randn([8, 512, 16, 16]), torch.randn([8, 256, 64, 64]),
-#          torch.randn([8, 512, 32, 32]), torch.randn([8, 512, 16, 16]),
-#          torch.randn([8, 3328, 64, 64]),
-#          torch.randn([8, 11264, 32, 32]),
-#          torch.randn([8, 15360, 16, 16]),
-#          torch.randn([8, 3328, 64, 64]),
-#          torch.randn([8, 11264, 32, 32]),
-#          torch.randn([8, 15360, 16, 16])]
-#     loss = model.total_loss(I_cs, features)
+        return total_loss, global_loss, local_loss
 
