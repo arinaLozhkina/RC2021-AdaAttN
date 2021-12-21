@@ -30,7 +30,7 @@ class AdaAttN(nn.Module):
         for channel in range(channels_size):
             cur_x = x[:, channel, :, :]
             res[:, channel, :, :] = (cur_x - torch.mean(cur_x, dim=[0, 1, 2])) / (
-                        torch.std(cur_x, dim=[0, 1, 2]) + self.eps)
+                    torch.std(cur_x, dim=[0, 1, 2]) + self.eps)
         return res
 
     def forward(self, F_c, F_s, F_c_previous, F_s_previous):
@@ -43,8 +43,9 @@ class AdaAttN(nn.Module):
         # attention-weighted mean and standard variance map
         A_T = torch.transpose(A, 1, 2)  # shape (batch, H*W, channels 1:x)
         M = torch.matmul(V, A_T)  # mean, shape (batch, channels, H*W)
-        S = torch.sqrt(torch.matmul(V * V, A_T) - M * M)  # standard variance, shape (batch, channels, H*W)
-
+        var = torch.matmul(V * V, A_T) - M * M
+        S = torch.sqrt(var.clamp(min=0) + 1e-8)  # standard variance, shape (batch, channels, H*W)
+        
         # adaptive normalization
         F_cs = torch.nan_to_num(S) * self.norm(F_c).flatten(-2,
                                                             -1) + M  # S - scale, M - shift, shape (batch, channels, H*W)
@@ -164,14 +165,13 @@ class Decoder(nn.Module):
         return x
 
 
-class OverallModel(nn.Module):
+class EncoderModel(object):
     """
-    Full model: encoder (pretrained VGG19) -> get ReLU-3_1, ReLU-4_1, ReLU-5_1 -> AdaAttn -> decoder
+    Get encoding features of pretrained VGG19
     """
-
-    def __init__(self, v_dim, device):
-        super(OverallModel, self).__init__()
-        self.encoder = torchvision.models.vgg19(pretrained=True)  # pretrained VGG19
+    def __init__(self, device):
+        super(EncoderModel, self).__init__()
+        self.encoder = torchvision.models.vgg19(pretrained=True).to(device).eval()  # pretrained VGG19
         self.layers_index = [13, 22, 31]  # index of relu-3_1, relu-4_1 and relu-5_1 features in VGG19
         self.return_nodes = {f'features.{i}': f'features.{i}' for i in self.layers_index}  # features of relu
         self.features = create_feature_extractor(self.encoder,
@@ -179,14 +179,6 @@ class OverallModel(nn.Module):
         self.return_nodes_previous = {f'features.{i}': f'features.{i}' for i in range(31) if i not in self.layers_index}
         self.features_previous = create_feature_extractor(self.encoder,
                                                           return_nodes=self.return_nodes_previous)  # get features of previous layers
-        for param in self.encoder.parameters():
-            param.requires_grad = False
-
-        self.device = device
-        self.AdaAttn0 = AdaAttN(1 * 256, 13 * 1 * 256).to(device)  # initialize Adaptive attention network
-        self.AdaAttn1 = AdaAttN(2 * 256, 22 * 2 * 256).to(device)
-        self.AdaAttn2 = AdaAttN(2 * 256, 30 * 2 * 256).to(device)
-        self.decoder = Decoder(v_dim)  # initialize decoder
 
     @staticmethod
     def bilinear_interpolation(x, F):
@@ -196,9 +188,7 @@ class OverallModel(nn.Module):
         :return:
         """
         spatial_interpolation = functional.interpolate(x, F.shape[2:], mode="bilinear", align_corners=True).permute(0,
-                                                                                                                    2,
-                                                                                                                    1,
-                                                                                                                    3)
+                                                                                                                2, 1, 3)
         channel_interpolation = functional.interpolate(spatial_interpolation, F.shape[1:3], mode='bilinear',
                                                        align_corners=True).permute(0, 2, 1, 3)
 
@@ -214,45 +204,61 @@ class OverallModel(nn.Module):
         previous_by_idx = lambda k, f_i: torch.cat([*list(map(self.bilinear_interpolation, all_previous[:k],
                                                               [f_i] * k)), f_i],
                                                    dim=1)  # bilinear interpolation concatenated by channel
-        F_3_previous = previous_by_idx(12, F_3)  # from 1 to 13 layers (ReLU-3_1 - 13th layer)
+        F_3_previous = previous_by_idx(13, F_3)  # from 1 to 13 layers (ReLU-3_1 - 13th layer)
         F_4_previous = previous_by_idx(21, F_4)  # from 1 to 22 layers (ReLU-4_1 - 22th layer)
         F_5_previous = previous_by_idx(29, F_5)  # from 1 to 31 layers (ReLU-5_1 - 31th layer)
         return F_3_previous, F_4_previous, F_5_previous
 
     def forward(self, content, style):
         # get encoder features
-        self.F_c3, self.F_c4, self.F_c5 = self.features(content).values()
-        self.F_s3, self.F_s4, self.F_s5 = self.features(style).values()
+        F_c3, F_c4, F_c5 = self.features(content).values()
+        F_s3, F_s4, F_s5 = self.features(style).values()
         # F*^{1:x}
-        self.F_c3_previous, self.F_c4_previous, self.F_c5_previous = self.get_previous(content, self.F_c3, self.F_c4,
-                                                                                       self.F_c5)
-        self.F_s3_previous, self.F_s4_previous, self.F_s5_previous = self.get_previous(style, self.F_s3, self.F_s4,
-                                                                                       self.F_s5)
+        F_c3_previous, F_c4_previous, F_c5_previous = self.get_previous(content, F_c3, F_c4, F_c5)
+        F_s3_previous, F_s4_previous, F_s5_previous = self.get_previous(style, F_s3, F_s4, F_s5)
+        return [F_s3, F_s4, F_s5, F_c3, F_c4, F_c5,
+                F_s3_previous, F_s4_previous, F_s5_previous,
+                F_c3_previous, F_c4_previous, F_c5_previous]
 
+
+class OverallModel(nn.Module):
+    """
+    Full model: encoder (pretrained VGG19) -> get ReLU-3_1, ReLU-4_1, ReLU-5_1 -> AdaAttn -> decoder
+    """
+
+    def __init__(self, v_dim, device):
+        super(OverallModel, self).__init__()
+        self.device = device
+        self.AdaAttn0 = AdaAttN(1 * 256, 14 * 1 * 256).to(device)  # initialize Adaptive attention network
+        self.AdaAttn1 = AdaAttN(2 * 256, 22 * 2 * 256).to(device)
+        self.AdaAttn2 = AdaAttN(2 * 256, 30 * 2 * 256).to(device)
+        self.decoder = Decoder(v_dim)  # initialize decoder
+
+    def forward(self, features):
+        [F_s3, F_s4, F_s5, F_c3, F_c4, F_c5, F_s3_previous, F_s4_previous, F_s5_previous, F_c3_previous, F_c4_previous,
+         F_c5_previous] = features  # get features
         # adaptive attention network
-        F_cs3 = self.AdaAttn0(self.F_c3.to(self.device), self.F_s3.to(self.device), self.F_c3_previous.to(self.device),
-                              self.F_s3_previous.to(self.device))  # for ReLU - 3
-        F_cs4 = self.AdaAttn1(self.F_c4.to(self.device), self.F_s4.to(self.device), self.F_c4_previous.to(self.device),
-                              self.F_s4_previous.to(self.device))  # for ReLU - 4
-        F_cs5 = self.AdaAttn2(self.F_c5.to(self.device), self.F_s5.to(self.device), self.F_c5_previous.to(self.device),
-                              self.F_s5_previous.to(self.device))  # for ReLU - 5
-
+        F_cs3 = self.AdaAttn0(F_c3.to(self.device), F_s3.to(self.device), F_c3_previous.to(self.device),
+                              F_s3_previous.to(self.device))  # for ReLU - 3
+        F_cs4 = self.AdaAttn1(F_c4.to(self.device), F_s4.to(self.device), F_c4_previous.to(self.device),
+                              F_s4_previous.to(self.device))  # for ReLU - 4
+        F_cs5 = self.AdaAttn2(F_c5.to(self.device), F_s5.to(self.device), F_c5_previous.to(self.device),
+                              F_s5_previous.to(self.device))  # for ReLU - 5
         # decoder
         I_cs = self.decoder(F_cs3, F_cs4, F_cs5)
-        return I_cs, [self.F_s3, self.F_s4, self.F_s5, self.F_c3, self.F_c4, self.F_c5,
-                      self.F_s3_previous, self.F_s4_previous, self.F_s5_previous,
-                      self.F_c3_previous, self.F_c4_previous, self.F_c5_previous]
+        return I_cs
 
 
 if __name__ == '__main__':
     # models test
-    # model = OverallModel(128, torch.device("cpu"))
-    # content_im = torch.randn((8, 3, 256, 256))
-    # style_im = torch.randn((8, 3, 256, 256))
-    # print(model(content_im, style_im))
-    # model = AdaAttN(256, 256 * 13)
-    # vect = [torch.randn([8, 256, 64, 64]),  torch.randn([8, 256, 64, 64]), torch.randn([8, 3328, 64, 64]), torch.randn([8, 3328, 64, 64])]
-    # print(model(*vect))
+    model = OverallModel(128, torch.device("cpu"))
+    content_im = torch.randn((8, 3, 256, 256))
+    style_im = torch.randn((8, 3, 256, 256))
+    print(model(content_im, style_im))
+    model = AdaAttN(256, 256 * 13)
+    vect = [torch.randn([8, 256, 64, 64]),  torch.randn([8, 256, 64, 64]), torch.randn([8, 3328, 64, 64]), torch.randn([8, 3328, 64, 64])]
+    print(model(*vect))
+    # decoder test 
     model = Decoder(256)
     f3 = torch.randn((8, 256, 4096))
     f4 = torch.randn((8, 512, 1024))
