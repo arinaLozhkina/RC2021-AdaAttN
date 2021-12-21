@@ -18,26 +18,26 @@ The repository contains files:
 In order to run training: 
 1. Clone the repository: 
 ```
-	gh repo clone arinaLozhkina/RC2021-AdaAttN-
+gh repo clone arinaLozhkina/RC2021-AdaAttN-
 ```
 2. Add images for style and content images:  
 ```
-	mkdir data 
-	cd ./data 
-	wget "COCO dataset" -O temp.zip
-	unzip temp.zip -d ./train2014
-	rm temp.zip
-	wget "WikiArt dataset" -O temp.zip
-	unzip temp.zip -d ./wikiart
-	rm temp.zip
+mkdir data 
+cd ./data 
+wget "COCO dataset" -O temp.zip
+unzip temp.zip -d ./train2014
+rm temp.zip
+wget "WikiArt dataset" -O temp.zip
+unzip temp.zip -d ./wikiart
+rm temp.zip
 ```
 3. Install packages
 ```
-	pip3 install -r ../requirements.txt 
+pip3 install -r ../requirements.txt 
 ```
 4. Run train.py 
 ```
-	python3 train.py 
+python3 train.py 
 ```
 
 ## Report 
