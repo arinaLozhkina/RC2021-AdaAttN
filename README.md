@@ -31,11 +31,12 @@ In order to run training:
 	unzip temp.zip -d ./wikiart
 	rm temp.zip
 ```
-	Final structure of project folders is :
-		- src
-		- data 
-			- train2014 
-			- wikiart 
+
+Final structure of project folders is :
+	- src
+	- data 
+		- train2014 
+		- wikiart 
 3. Install packages
 ```
 	pip3 install -r ../requirements.txt 
