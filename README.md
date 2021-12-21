@@ -2,7 +2,7 @@
 
 ## Project Description 
 In this project we reproduce (as a part of [Reproducibility Challenge 2021](https://paperswithcode.com/rc2021))  implementation of style transfer based on the paper [AdaAttN: Revisit Attention Mechanism in Arbitrary Neural Style Transfer, S. Liu et al. 2021](https://arxiv.org/abs/2108.03647). The goal of this project is to reimplement the style transfer model from scratch. 
-![Alt text](./fullModel.png?raw=true "OverallModel")
+![Alt text](./fullModel.png?raw=true "Overall Model")
 
 
 ## Code Description 
