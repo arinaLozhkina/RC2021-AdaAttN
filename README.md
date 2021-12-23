@@ -43,4 +43,4 @@ python3 train.py
 ```
 
 ## Report 
-The paper’s reproducibility report will be added later. 
+The paper’s reproducibility report is report.pdf. 
