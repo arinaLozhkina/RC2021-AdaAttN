@@ -16,7 +16,7 @@ class LossCalculate(object):
         self.lambda_g = lambda_g  # weight of global loss
 
         # features of VGG19 layers
-        self.softmax = torch.nn.Softmax(dim=-1)
+        self.softmax = torch.nn.Sigmoid()  # torch.nn.Softmax(dim=-1) in the paper
         self.encoder = torchvision.models.vgg19(pretrained=True).to(device).eval()  # pretrained VGG19
         self.return_nodes = {
             'features.13': 'relu_3',  # relu-3_1

@@ -19,13 +19,13 @@ class TrainModel(object):
     def __init__(self):
         # hyper parameters
         self.num_epochs = 10  # number of epochs to train
-        self.train_dataset_length = 800  # number of images in train dataset
-        self.val_dataset_length = 200  # number of images in validation dataset
+        self.train_dataset_length = 500  # number of images in train dataset
+        self.val_dataset_length = 100  # number of images in validation dataset
         self.checkpoints = 5  # times of checkpoints
         self.batch_size = 8
         self.train_ratio = 0.8  # part of train data in a full dataset
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")  # gpu or cpu
-        self.alpha, self.beta1, self.beta2 = 1e-5, 0.9, 0.999  # Adam parameters
+        self.alpha, self.beta1, self.beta2 = 1e-4, 0.9, 0.999  # Adam parameters
         self.lambda_g, self.lambda_l = 10, 3  # loss parameters
         self.adattn_shape = 64  # squared image size
         self.pretrained = True  # if we want to use pretrained weights
@@ -35,13 +35,7 @@ class TrainModel(object):
         self.Encoder = EncoderModel(self.device)
         self.Model = OverallModel(self.adattn_shape, self.device).to(self.device)  # neural network
         self.Criterion = LossCalculate(self.lambda_l, self.lambda_g, self.device)  # loss function
-        # self.Optimizer = torch.optim.Adam(self.Model.parameters(), lr=self.alpha, betas=(self.beta1, self.beta2))
-        self.Optimizer = torch.optim.Adam([
-            {'params': self.Model.decoder.parameters()},
-            {'params': self.Model.AdaAttn0.parameters(), 'weight_decay': 5e-4},
-            {'params': self.Model.AdaAttn1.parameters(), 'weight_decay': 5e-4},
-            {'params': self.Model.AdaAttn2.parameters(), 'weight_decay': 5e-4}
-        ], lr=self.alpha, betas=(self.beta1, self.beta2))
+        self.Optimizer = torch.optim.Adam(self.Model.parameters(), lr=self.alpha, betas=(self.beta1, self.beta2))
         torch.autograd.set_detect_anomaly(True)
 
         # Tracking losses

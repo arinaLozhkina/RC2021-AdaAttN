@@ -16,7 +16,7 @@ class AdaAttN(nn.Module):
         self.f = nn.Conv2d(qk_dim, qk_dim, (1, 1))
         self.g = nn.Conv2d(qk_dim, qk_dim, (1, 1))
         self.h = nn.Conv2d(v_dim, v_dim, (1, 1))
-        self.softmax = nn.Softmax(dim=-1)
+        self.softmax = nn.Sigmoid()  # nn.Softmax(dim=-1) in the paper
 
     def norm(self, x):
         """
@@ -251,14 +251,13 @@ class OverallModel(nn.Module):
 
 if __name__ == '__main__':
     # models test
-    model = OverallModel(128, torch.device("cpu"))
-    content_im = torch.randn((8, 3, 256, 256))
-    style_im = torch.randn((8, 3, 256, 256))
-    print(model(content_im, style_im))
-    model = AdaAttN(256, 256 * 13)
-    vect = [torch.randn([8, 256, 64, 64]),  torch.randn([8, 256, 64, 64]), torch.randn([8, 3328, 64, 64]), torch.randn([8, 3328, 64, 64])]
-    print(model(*vect))
-    # decoder test 
+    # model = OverallModel(128, torch.device("cpu"))
+    # content_im = torch.randn((8, 3, 256, 256))
+    # style_im = torch.randn((8, 3, 256, 256))
+    # print(model(content_im, style_im))
+    # model = AdaAttN(256, 256 * 13)
+    # vect = [torch.randn([8, 256, 64, 64]),  torch.randn([8, 256, 64, 64]), torch.randn([8, 3328, 64, 64]), torch.randn([8, 3328, 64, 64])]
+    # print(model(*vect))
     model = Decoder(256)
     f3 = torch.randn((8, 256, 4096))
     f4 = torch.randn((8, 512, 1024))
